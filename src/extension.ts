@@ -5,7 +5,6 @@ import * as fs from 'fs';
 const axios = require('axios');
 const genius = require('genius-lyrics-api');
 import dotenv from 'dotenv';
-import { isNumberObject } from 'util/types';
 dotenv.config();
 
 const geniusApiKey = "3NVoN8M9F83zCC3Yr43380lZ-uepnzvjMD1koGMN0f7CT66YUlV8HF_7ZA5fYZ-a";
@@ -15,6 +14,10 @@ let rewind = false;
 let fastForward = false;
 let stop = false;
 let restart = false;
+let changeSpeed = false;
+let speedModifier = 1;
+
+const timer = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 94);
 
 const playPauseButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 98);
 playPauseButton.text = '$(debug-pause)';
@@ -40,6 +43,11 @@ const restartButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignmen
 restartButton.text = '$(debug-restart)';
 restartButton.tooltip = 'Restart';
 restartButton.command = 'tab-scroller.restartScroll';
+
+const speedModifierButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 95);
+speedModifierButton.text = `${speedModifier}x`;
+speedModifierButton.tooltip = 'Change Speed';
+speedModifierButton.command = 'tab-scroller.cycleSpeed';
 
 async function fetchLyrics(songName: string, artistName: string) {
 
@@ -142,6 +150,11 @@ export async function activate(context: vscode.ExtensionContext) {
       });
 
       if (userInput !== undefined) {
+        const regex = /^\d+:\d+$/;
+        if (!regex.test(userInput)) {
+            vscode.window.showErrorMessage('Please enter valid numbers for minutes and seconds');
+            return;
+        }
         const timeComponents = userInput.split(":");
         if (timeComponents.length !== 2) {
           vscode.window.showWarningMessage('Please enter a properly formatted time (Minute:Second)');
@@ -149,14 +162,29 @@ export async function activate(context: vscode.ExtensionContext) {
         }
         const minutes = parseInt(timeComponents[0], 10);
         const seconds = parseInt(timeComponents[1], 10);
-        // TODO: verify minutes and seconds are numbers
 
-        let totalSeconds = (minutes*60)+seconds;
+        if (seconds > 59) {
+          vscode.window.showErrorMessage('Please enter values 00-59 for seconds');
+          return;
+        }
 
-        const timer = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 95);
-        timer.text = `0:00/${minutes}:${seconds}`;
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          vscode.window.showErrorMessage('Must be in an active text editor to use this command');
+          return;
+        }
+
+        const distance = editor.document.lineCount;
+        const time = (minutes*60)+seconds;
+        const rate = distance/time;
+
+        if (seconds < 10) {
+          timer.text = `0:00/${minutes}:0${seconds}`;
+        } else {
+          timer.text = `0:00/${minutes}:${seconds}`;
+        }
         timer.show();
-
+        speedModifierButton.show();
         stopButton.show();
         fastForwardButton.show();
         playPauseButton.show();
@@ -165,65 +193,90 @@ export async function activate(context: vscode.ExtensionContext) {
 
         let displaySeconds = 0;
         let displayMinutes = 0;
+        let lineNumber = 1;
 
-        // TODO: verify seconds has 2 digits
-
-        interval = setInterval(() => {
-          if (displaySeconds >= 59) {
-            displaySeconds = 0;
-            displayMinutes++;
-          }
-          if (displaySeconds < 10) {
-            timer.text = `${displayMinutes}:0${displaySeconds}/${minutes}:${seconds}`;
-          } else {
-            timer.text = `${displayMinutes}:${displaySeconds}/${minutes}:${seconds}`;
-          }
-
-          if (displayMinutes >= minutes && displaySeconds >= seconds) {
-            clearInterval(interval);
-            vscode.window.showInformationMessage('The song is over. Want to play again?');
-          }
-
-          if (!isPaused) {
-            displaySeconds++;
-          }
-
-          if (rewind) {
-            displaySeconds-=10;
-            if (displaySeconds < 0) {
-              if (displayMinutes === 0) {
-                displaySeconds = 0;
-              } else {
-                displaySeconds+=60;
-                displayMinutes--;
-              }
+        function runInterval() {
+          interval = setInterval(() => {
+            if (displaySeconds >= 59) {
+              displaySeconds = 0;
+              displayMinutes++;
             }
-            rewind = false;
-          }
+            if (displaySeconds < 10 && seconds < 10) {
+              timer.text = `${displayMinutes}:0${displaySeconds}/${minutes}:0${seconds}`;
+            } else if (displaySeconds < 10) {
+              timer.text = `${displayMinutes}:0${displaySeconds}/${minutes}:${seconds}`;
+            } else if (seconds < 10) {
+              timer.text = `${displayMinutes}:${displaySeconds}/${minutes}:0${seconds}`;
+            } else {
+              timer.text = `${displayMinutes}:${displaySeconds}/${minutes}:${seconds}`;
+            }
 
-          if (fastForward) {
-            displaySeconds+=10;
-            fastForward = false;
-          }
+            speedModifierButton.text = `${speedModifier}x`;
 
-          if (stop) {
-            clearInterval(interval);
-            timer.hide();
-            stopButton.hide();
-            fastForwardButton.hide();
-            playPauseButton.hide();
-            rewindButton.hide();
-            restartButton.hide();
-            vscode.window.showInformationMessage('You have stopped the song. Play again any time!');
-          }
+            vscode.commands.executeCommand('revealLine', {lineNumber: lineNumber, at: "center"});
 
-          if (restart) {
-            displayMinutes = 0;
-            displaySeconds = 0;
-            restart = false;
-          }
+            if (displayMinutes >= minutes && displaySeconds >= seconds) {
+              clearInterval(interval);
+              vscode.window.showInformationMessage('The song is over. Want to play again?');
+            }
 
-        }, 1000);
+            if (!isPaused) {
+              displaySeconds++;
+              lineNumber+=rate;
+            }
+
+            if (rewind) {
+              displaySeconds-=10;
+              if (displaySeconds < 0) {
+                if (displayMinutes === 0) {
+                  displaySeconds = 0;
+                } else {
+                  displaySeconds+=60;
+                  displayMinutes--;
+                }
+              }
+              lineNumber-=(rate*10);
+              if (lineNumber < 1) {
+                lineNumber = 1;
+              }
+              rewind = false;
+            }
+
+            if (fastForward) {
+              displaySeconds+=10;
+              lineNumber+=(rate*10);
+              fastForward = false;
+            }
+
+            if (stop) {
+              clearInterval(interval);
+              timer.hide();
+              speedModifierButton.hide();
+              stopButton.hide();
+              fastForwardButton.hide();
+              playPauseButton.hide();
+              rewindButton.hide();
+              restartButton.hide();
+              vscode.window.showInformationMessage('You have stopped the song. Play again any time!');
+              stop = false;
+              speedModifier = 1;
+            }
+
+            if (restart) {
+              displayMinutes = 0;
+              displaySeconds = 0;
+              lineNumber = 1;
+              restart = false;
+            }
+            
+            if (changeSpeed === true) {
+              clearInterval(interval);
+              changeSpeed = false;
+              runInterval();
+            }
+          }, 1000/speedModifier);
+        }
+        runInterval();
       } else {
         vscode.window.showWarningMessage('User canceled the input.');
       }
@@ -255,9 +308,36 @@ export async function activate(context: vscode.ExtensionContext) {
       restart = true;
     });
 
+    let cycleSpeed = vscode.commands.registerCommand('tab-scroller.cycleSpeed', async () => {
+      switch (speedModifier) {
+        case 1:
+          speedModifier = 1.5;
+          break;
+        case 1.5:
+          speedModifier = 2;
+          break;
+        case 2:
+          speedModifier = 3;
+          break;
+        case 3:
+          speedModifier = .25;
+          break;
+        case .25:
+          speedModifier = .5;
+          break;
+        case .5:
+          speedModifier = .75;
+          break;
+        case .75:
+          speedModifier = 1;
+          break;
+      }
+      changeSpeed = true;
+    });
 
 
-    context.subscriptions.push(lyrics, scroller, togglePause, setRewind, setFastForward, stopScroll, restartScroll);
+
+    context.subscriptions.push(lyrics, scroller, togglePause, setRewind, setFastForward, stopScroll, restartScroll, cycleSpeed);
 }
 
 // This method is called when your extension is deactivated
