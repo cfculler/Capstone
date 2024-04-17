@@ -7,6 +7,7 @@ const genius = require('genius-lyrics-api');
 import dotenv from 'dotenv';
 dotenv.config();
 
+// comment [img/tf-code.png]
 const geniusApiKey = "3NVoN8M9F83zCC3Yr43380lZ-uepnzvjMD1koGMN0f7CT66YUlV8HF_7ZA5fYZ-a";
 let interval: NodeJS.Timeout;
 let isPaused = false;
@@ -16,6 +17,7 @@ let stop = false;
 let restart = false;
 let changeSpeed = false;
 let speedModifier = 1;
+let distance = 0;
 
 const timer = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 94);
 
@@ -143,6 +145,14 @@ export async function activate(context: vscode.ExtensionContext) {
     });
 
     let scroller = vscode.commands.registerCommand('tab-scroller.tabScroller', async () => {
+      const webviewPanel: vscode.WebviewPanel = await vscode.commands.executeCommand('tab-scroller.webView');
+
+      webviewPanel.webview.onDidReceiveMessage(async (message) => {
+        if (message.command === 'scrollableHeight') {
+            distance = message.value;
+        }
+      }, undefined, context.subscriptions);
+
       const userInput = await vscode.window.showInputBox({
         prompt: 'How long is the song?',
         placeHolder: 'ex. 2:37',
@@ -168,15 +178,9 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
 
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-          vscode.window.showErrorMessage('Must be in an active text editor to use this command');
-          return;
-        }
-
-        const distance = editor.document.lineCount;
         const time = (minutes*60)+seconds;
         const rate = distance/time;
+
 
         if (seconds < 10) {
           timer.text = `0:00/${minutes}:0${seconds}`;
@@ -213,7 +217,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
             speedModifierButton.text = `${speedModifier}x`;
 
-            vscode.commands.executeCommand('revealLine', {lineNumber: lineNumber, at: "center"});
+            webviewPanel.webview.postMessage({ command: 'scrollTo', value: lineNumber });
 
             if (displayMinutes >= minutes && displaySeconds >= seconds) {
               clearInterval(interval);
@@ -335,9 +339,104 @@ export async function activate(context: vscode.ExtensionContext) {
       changeSpeed = true;
     });
 
+    let webView = vscode.commands.registerCommand('tab-scroller.webView', async () => {
+      function createWebView() {
+          const panel = vscode.window.createWebviewPanel(
+              'pdfViewer', // Identifies the type of the webview. Used internally
+              'stairway-to-heaven', // Title of the panel displayed to the user
+              vscode.ViewColumn.One, // Editor column to show the new webview panel in.
+              {}
+          );
+  
+          panel.webview.options = {
+              enableScripts: true,
+          };
+
+          // Get path to resource on disk
+          const onDiskPath = vscode.Uri.joinPath(context.extensionUri, 'stairway-to-heaven');
+
+          // And get the special URI to use with the webview
+          const pdfSrc = panel.webview.asWebviewUri(onDiskPath);
+  
+          // Read and load the HTML content from a file
+          panel.webview.html = getWebViewContent(pdfSrc);
+
+          return panel;
+      }
+  
+      function getWebViewContent(pdfSrc: vscode.Uri) {
+          return `<!DOCTYPE html>
+              <html lang="en">
+              
+              <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <title>Tabs</title>
+                  <style>
+                      body {
+                          font-family: Arial, sans-serif;
+                          text-align: center;
+                          margin: 0;
+                          padding: 0;
+                          background-color: #f5f5f5;
+                      }
+                      h1 {
+                          font-size: 36px;
+                          margin-bottom: 20px;
+                      }
+                  </style>
+              </head>
+              <body>
+                <img src="${pdfSrc}/1.png" />
+                <img src="${pdfSrc}/2.png" />
+                <img src="${pdfSrc}/3.png" />
+                <img src="${pdfSrc}/4.png" />
+                <img src="${pdfSrc}/5.png" />
+                <img src="${pdfSrc}/6.png" />
+                <img src="${pdfSrc}/7.png" />
+                <img src="${pdfSrc}/8.png" />
+                <img src="${pdfSrc}/9.png" />
+                <img src="${pdfSrc}/10.png" />
+                <img src="${pdfSrc}/11.png" />
+                <img src="${pdfSrc}/12.png" />
+                <img src="${pdfSrc}/13.png" />
+                <img src="${pdfSrc}/14.png" />
+                <img src="${pdfSrc}/15.png" />
+                <img src="${pdfSrc}/16.png" />
+                <img src="${pdfSrc}/17.png" />
+                  <script>
+                    function sendScrollableHeight() {
+                        const vscode = acquireVsCodeApi();
+                        const scrollHeight = document.documentElement.scrollHeight;
+                        vscode.postMessage({
+                            command: 'scrollableHeight',
+                            value: scrollHeight
+                        });
+                    }
+                    window.addEventListener('load', sendScrollableHeight);
+                  </script>
+                  <script>
+                      window.addEventListener('message', event => {
+                          const message = event.data;
+                          if (message.command === 'scrollTo') {
+                              window.scrollTo(0, message.value);
+                          }
+                      });
+                  </script>
+              </body>
+              </html>`;
+      }
+  
+      // Call createWebView function to create and display the web view
+      const webview = createWebView();
+      return webview;
+  });
+  
+  
+  
 
 
-    context.subscriptions.push(lyrics, scroller, togglePause, setRewind, setFastForward, stopScroll, restartScroll, cycleSpeed);
+    context.subscriptions.push(lyrics, scroller, togglePause, setRewind, setFastForward, stopScroll, restartScroll, cycleSpeed, webView);
 }
 
 // This method is called when your extension is deactivated

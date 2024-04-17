@@ -20,6 +20,10 @@
       {
         "command": "tab-scroller.tabScroller",
         "title": "Tab Scroller"
+      },
+      {
+        "command": "tab-scroller.webView",
+        "title": "Web View"
       }
     ]
   },
