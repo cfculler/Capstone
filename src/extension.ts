@@ -340,10 +340,19 @@ export async function activate(context: vscode.ExtensionContext) {
     });
 
     let webView = vscode.commands.registerCommand('tab-scroller.webView', async () => {
-      function createWebView() {
+
+      async function createWebView() {
+        const selectedDirectory = await selectDirectory();
+        if (selectedDirectory !== undefined) {
+
+          const directoryPath = selectedDirectory.fsPath;
+          const directoryName = directoryPath.split('/').pop();
+          if (directoryName === undefined) {
+            return undefined;
+          }
           const panel = vscode.window.createWebviewPanel(
-              'pdfViewer', // Identifies the type of the webview. Used internally
-              'stairway-to-heaven', // Title of the panel displayed to the user
+              'tabViewer', // Identifies the type of the webview. Used internally
+              directoryName, // Title of the panel displayed to the user
               vscode.ViewColumn.One, // Editor column to show the new webview panel in.
               {}
           );
@@ -352,19 +361,23 @@ export async function activate(context: vscode.ExtensionContext) {
               enableScripts: true,
           };
 
-          // Get path to resource on disk
-          const onDiskPath = vscode.Uri.joinPath(context.extensionUri, 'stairway-to-heaven');
+          const imageDir = panel.webview.asWebviewUri(selectedDirectory);
 
-          // And get the special URI to use with the webview
-          const pdfSrc = panel.webview.asWebviewUri(onDiskPath);
-  
+          const files = await vscode.workspace.fs.readDirectory(selectedDirectory);
+
+          let images = '';
+          for (let i = 1; i <= files.length; i++) {
+              images += `<img src="${imageDir}/${i}.png" />`;
+          }  
           // Read and load the HTML content from a file
-          panel.webview.html = getWebViewContent(pdfSrc);
+          panel.webview.html = getWebViewContent(images);
 
           return panel;
+        }
+        return undefined;
       }
   
-      function getWebViewContent(pdfSrc: vscode.Uri) {
+      function getWebViewContent(images: string) {
           return `<!DOCTYPE html>
               <html lang="en">
               
@@ -387,23 +400,7 @@ export async function activate(context: vscode.ExtensionContext) {
                   </style>
               </head>
               <body>
-                <img src="${pdfSrc}/1.png" />
-                <img src="${pdfSrc}/2.png" />
-                <img src="${pdfSrc}/3.png" />
-                <img src="${pdfSrc}/4.png" />
-                <img src="${pdfSrc}/5.png" />
-                <img src="${pdfSrc}/6.png" />
-                <img src="${pdfSrc}/7.png" />
-                <img src="${pdfSrc}/8.png" />
-                <img src="${pdfSrc}/9.png" />
-                <img src="${pdfSrc}/10.png" />
-                <img src="${pdfSrc}/11.png" />
-                <img src="${pdfSrc}/12.png" />
-                <img src="${pdfSrc}/13.png" />
-                <img src="${pdfSrc}/14.png" />
-                <img src="${pdfSrc}/15.png" />
-                <img src="${pdfSrc}/16.png" />
-                <img src="${pdfSrc}/17.png" />
+                ${images}
                   <script>
                     function sendScrollableHeight() {
                         const vscode = acquireVsCodeApi();
@@ -419,13 +416,28 @@ export async function activate(context: vscode.ExtensionContext) {
                       window.addEventListener('message', event => {
                           const message = event.data;
                           if (message.command === 'scrollTo') {
-                              window.scrollTo(0, message.value);
+                            window.scrollTo({
+                              top: message.value,
+                              behavior: 'smooth'
+                          });
                           }
                       });
                   </script>
               </body>
               </html>`;
       }
+
+      async function selectDirectory(): Promise<vscode.Uri | undefined> {
+        const options: vscode.OpenDialogOptions = {
+            canSelectFiles: false,
+            canSelectFolders: true,
+            canSelectMany: false,
+            openLabel: 'Select Directory'
+        };
+    
+        const result = await vscode.window.showOpenDialog(options);
+        return result ? result[0] : undefined;
+    }
   
       // Call createWebView function to create and display the web view
       const webview = createWebView();
