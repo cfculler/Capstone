@@ -51,6 +51,29 @@ speedModifierButton.text = `${speedModifier}x`;
 speedModifierButton.tooltip = 'Change Speed';
 speedModifierButton.command = 'tab-scroller.cycleSpeed';
 
+const scripts = `<script>
+function sendScrollableHeight() {
+    const vscode = acquireVsCodeApi();
+    const scrollHeight = document.documentElement.scrollHeight;
+    vscode.postMessage({
+        command: 'scrollableHeight',
+        value: scrollHeight
+    });
+}
+window.addEventListener('load', sendScrollableHeight);
+</script>
+<script>
+  window.addEventListener('message', event => {
+      const message = event.data;
+      if (message.command === 'scrollTo') {
+        window.scrollTo({
+          top: message.value,
+          behavior: 'smooth'
+      });
+      }
+  });
+</script>`;
+
 async function fetchLyrics(songName: string, artistName: string) {
 
   const options = {
@@ -217,7 +240,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
             speedModifierButton.text = `${speedModifier}x`;
 
-            webviewPanel.webview.postMessage({ command: 'scrollTo', value: lineNumber });
+            if (!isPaused) {
+              webviewPanel.webview.postMessage({ command: 'scrollTo', value: lineNumber });
+            }
 
             if (displayMinutes >= minutes && displaySeconds >= seconds) {
               clearInterval(interval);
@@ -342,17 +367,17 @@ export async function activate(context: vscode.ExtensionContext) {
     let webView = vscode.commands.registerCommand('tab-scroller.webView', async () => {
 
       async function createWebView() {
-        const selectedDirectory = await selectDirectory();
-        if (selectedDirectory !== undefined) {
+        const selectedFile = await selectFile();
+        if (selectedFile !== undefined) {
 
-          const directoryPath = selectedDirectory.fsPath;
-          const directoryName = directoryPath.split('/').pop();
-          if (directoryName === undefined) {
+          const filePath = selectedFile.fsPath;
+          const fileName = filePath.split('/').pop();
+          if (fileName === undefined) {
             return undefined;
           }
           const panel = vscode.window.createWebviewPanel(
               'tabViewer', // Identifies the type of the webview. Used internally
-              directoryName, // Title of the panel displayed to the user
+              fileName, // Title of the panel displayed to the user
               vscode.ViewColumn.One, // Editor column to show the new webview panel in.
               {}
           );
@@ -361,79 +386,27 @@ export async function activate(context: vscode.ExtensionContext) {
               enableScripts: true,
           };
 
-          const imageDir = panel.webview.asWebviewUri(selectedDirectory);
+          let fileContents = fs.readFileSync(filePath, 'utf-8');
+          fileContents = fileContents + scripts;
 
-          const files = await vscode.workspace.fs.readDirectory(selectedDirectory);
-
-          let images = '';
-          for (let i = 1; i <= files.length; i++) {
-              images += `<img src="${imageDir}/${i}.png" />`;
-          }  
           // Read and load the HTML content from a file
-          panel.webview.html = getWebViewContent(images);
+          panel.webview.html = fileContents;
 
           return panel;
         }
         return undefined;
       }
-  
-      function getWebViewContent(images: string) {
-          return `<!DOCTYPE html>
-              <html lang="en">
-              
-              <head>
-                  <meta charset="UTF-8">
-                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                  <title>Tabs</title>
-                  <style>
-                      body {
-                          font-family: Arial, sans-serif;
-                          text-align: center;
-                          margin: 0;
-                          padding: 0;
-                          background-color: #f5f5f5;
-                      }
-                      h1 {
-                          font-size: 36px;
-                          margin-bottom: 20px;
-                      }
-                  </style>
-              </head>
-              <body>
-                ${images}
-                  <script>
-                    function sendScrollableHeight() {
-                        const vscode = acquireVsCodeApi();
-                        const scrollHeight = document.documentElement.scrollHeight;
-                        vscode.postMessage({
-                            command: 'scrollableHeight',
-                            value: scrollHeight
-                        });
-                    }
-                    window.addEventListener('load', sendScrollableHeight);
-                  </script>
-                  <script>
-                      window.addEventListener('message', event => {
-                          const message = event.data;
-                          if (message.command === 'scrollTo') {
-                            window.scrollTo({
-                              top: message.value,
-                              behavior: 'smooth'
-                          });
-                          }
-                      });
-                  </script>
-              </body>
-              </html>`;
-      }
 
-      async function selectDirectory(): Promise<vscode.Uri | undefined> {
+      async function selectFile(): Promise<vscode.Uri | undefined> {
         const options: vscode.OpenDialogOptions = {
-            canSelectFiles: false,
-            canSelectFolders: true,
-            canSelectMany: false,
-            openLabel: 'Select Directory'
-        };
+          canSelectFiles: true,
+          canSelectFolders: false,
+          canSelectMany: false,
+          openLabel: 'Select html file',
+          filters: {
+              'HTML Files': ['html']
+          }
+      };
     
         const result = await vscode.window.showOpenDialog(options);
         return result ? result[0] : undefined;
@@ -444,7 +417,7 @@ export async function activate(context: vscode.ExtensionContext) {
       return webview;
   });
   
-  
+
   
 
 
