@@ -173,6 +173,7 @@ export async function activate(context: vscode.ExtensionContext) {
       webviewPanel.webview.onDidReceiveMessage(async (message) => {
         if (message.command === 'scrollableHeight') {
             distance = message.value;
+            distance = distance * 0.95;
         }
       }, undefined, context.subscriptions);
 
@@ -289,6 +290,9 @@ export async function activate(context: vscode.ExtensionContext) {
               vscode.window.showInformationMessage('You have stopped the song. Play again any time!');
               stop = false;
               speedModifier = 1;
+
+              vscode.commands.executeCommand('workbench.action.focusSideBar');
+              vscode.commands.executeCommand('workbench.action.focusPanel');
             }
 
             if (restart) {
@@ -375,6 +379,12 @@ export async function activate(context: vscode.ExtensionContext) {
           if (fileName === undefined) {
             return undefined;
           }
+
+          await vscode.commands.executeCommand('workbench.action.focusSideBar');
+          await vscode.commands.executeCommand('workbench.action.toggleSidebarVisibility');
+          await vscode.commands.executeCommand('workbench.action.focusPanel');
+          await vscode.commands.executeCommand('workbench.action.togglePanel');
+          
           const panel = vscode.window.createWebviewPanel(
               'tabViewer', // Identifies the type of the webview. Used internally
               fileName, // Title of the panel displayed to the user
@@ -389,6 +399,28 @@ export async function activate(context: vscode.ExtensionContext) {
           let fileContents = fs.readFileSync(filePath, 'utf-8');
           fileContents = fileContents + scripts;
 
+          const asideRegex = /<aside[\s\S]*?<\/aside>/g;
+          const asideMatch = fileContents.match(asideRegex);
+          if (asideMatch !== null) {
+            fileContents = fileContents.replace(asideMatch[0], '');
+          }
+
+          const navRegex = /<nav[\s\S]*?<\/nav>/g;
+          const navMatch = fileContents.match(navRegex);
+          if (navMatch !== null) {
+            fileContents = fileContents.replace(navMatch[0], '');
+          }
+
+          const footerStartRegex = /<footer[\s\S]*?>/g;
+          const footerRegex = /<footer[\s\S]*?<\/footer>/g;
+          const footerStartMatch = fileContents.match(footerStartRegex);
+          const footerMatch = fileContents.match(footerRegex);
+          if (footerStartMatch !== null && footerMatch !== null) {
+            fileContents = fileContents.replace(footerMatch[0], `${footerStartMatch}</footer>`);
+          }
+
+          fileContents = fileContents.replace('<section id=showroom class=Cek21w><div id=Redesign_ATF_tab_page_728x90 class="ju1pe Cek1gy"></div></section>', '');
+          fileContents = fileContents.replace('<a id=text-showroom href="https://www.songsterr.com/a/wa/plus?from=header_link" class=Cuqdk><span>Get Plus for uninterrupted sync with original audio</span></a>', '');
           // Read and load the HTML content from a file
           panel.webview.html = fileContents;
 
